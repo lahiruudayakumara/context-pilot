@@ -38,6 +38,8 @@ service.
   important modules, development, and testing
 - [Architecture](docs/ARCHITECTURE.md) — boundaries, data flow, design
   decisions, privacy, reliability, and extension points
+- [Product roadmap](docs/ROADMAP.md) — strategic product vision, architectural
+  milestones, and planned deliverables
 - [Contributing](CONTRIBUTING.md) — development workflow, standards, tests, and
   pull-request expectations
 - [Security policy](SECURITY.md) — supported versions and private reporting
