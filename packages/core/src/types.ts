@@ -70,6 +70,7 @@ export interface PrepareOptions {
   maxFiles?: number;
   skills?: string[];
   refinePrompt?: boolean;
+  compact?: boolean;
 }
 
 export interface PrepareResult {

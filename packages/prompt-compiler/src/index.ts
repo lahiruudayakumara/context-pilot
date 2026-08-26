@@ -2,8 +2,10 @@ import { readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import type { RankedFile, UsageEstimate } from "../../core/src/types.js";
 import { estimateTokens, truncateToTokens } from "../../token-estimator/src/index.js";
+import { compressExcerpt } from "./compressor.js";
 
 export * from "./skills/index.js";
+export * from "./compressor.js";
 
 export interface CompileInput {
   root: string;
@@ -15,6 +17,7 @@ export interface CompileInput {
   repositoryEstimatedTokens: number;
   diff?: string;
   skills?: string[];
+  compact?: boolean;
 }
 
 export interface CompileResult {
@@ -165,8 +168,12 @@ export async function compilePrompt(input: CompileInput): Promise<CompileResult>
       "",
       rankedFile.file.summary,
     ].join("\n");
-    const excerpt = rankedFile.excerpt
-      ? `\n\n\`\`\`${fenceFor(rankedFile.file.path)}\n${rankedFile.excerpt}\n\`\`\``
+    let rawExcerpt = rankedFile.excerpt;
+    if (rawExcerpt && input.compact) {
+      rawExcerpt = compressExcerpt(rawExcerpt);
+    }
+    const excerpt = rawExcerpt
+      ? `\n\n\`\`\`${fenceFor(rankedFile.file.path)}\n${rawExcerpt}\n\`\`\``
       : "";
     let section = `${summary}${excerpt}`;
     const available = input.budget - consumed - reserveForReport;

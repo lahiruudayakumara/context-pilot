@@ -92,3 +92,47 @@ test("automatically ensures .context-pilot/ entry in target .gitignore", async (
   assert.match(gitignoreContent, /node_modules\//);
   assert.match(gitignoreContent, /\.context-pilot\//);
 });
+
+test("compresses code token excerpts when compact mode is enabled", async () => {
+  const root = await mkdtemp(join(tmpdir(), "context-pilot-compress-"));
+  await mkdir(join(root, "src"), { recursive: true });
+  const verboseCode = `
+/**
+ * Verbose documentation block comment.
+ * Line 2 of comment.
+ */
+export function calculateTotal(items: number[]) {
+  // Inline comment explaining iteration
+  let total = 0;
+
+
+  for (const item of items) {
+    total += item;
+  }
+
+  return total;
+}
+`;
+  await writeFile(join(root, "src", "calculator.ts"), verboseCode);
+
+  const normalResult = await prepareContext({
+    root,
+    task: "calculateTotal iteration",
+    budget: 3_000,
+    compact: false,
+  });
+
+  const compactResult = await prepareContext({
+    root,
+    task: "calculateTotal iteration",
+    budget: 3_000,
+    compact: true,
+  });
+
+  assert.ok(
+    compactResult.usage.estimatedWithContextPilotTokens <
+      normalResult.usage.estimatedWithContextPilotTokens,
+  );
+  const compactMarkdown = await readFile(compactResult.outputPath, "utf8");
+  assert.ok(compactMarkdown.includes("calculateTotal(items: number[])"));
+});

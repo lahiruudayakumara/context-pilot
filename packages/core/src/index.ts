@@ -23,6 +23,7 @@ export {
   SKILL_PRESETS,
   AVAILABLE_SKILL_NAMES,
   ALL_SKILL_DEFINITIONS,
+  compressExcerpt,
 } from "../../prompt-compiler/src/index.js";
 export type {
   ConvertPromptOptions,
@@ -129,6 +130,7 @@ export async function prepareContext(options: PrepareOptions): Promise<PrepareRe
     repositoryEstimatedTokens: estimateRepositoryTokens(index.files),
     ...(diff ? { diff } : {}),
     ...(appliedSkills ? { skills: appliedSkills } : {}),
+    ...(options.compact ? { compact: true } : {}),
   });
   const defaultOutput = join(root, ".context-pilot", "tasks", `${slugify(options.task)}.md`);
   const outputPath = options.output

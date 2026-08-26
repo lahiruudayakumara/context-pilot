@@ -43,9 +43,10 @@ export async function startMcpServer(): Promise<void> {
         maxFiles: z.number().int().positive().default(24),
         skills: z.array(z.string()).optional().describe(`Optional skill options: ${AVAILABLE_SKILL_NAMES.join(", ")}`),
         refinePrompt: z.boolean().optional().describe("Whether to convert task into an enhanced structured prompt"),
+        compact: z.boolean().optional().describe("Whether to enable high-density code token compression (strips comments & blank lines)"),
       },
     },
-    async ({ root, task, budget, output, maxFiles, skills, refinePrompt }) => {
+    async ({ root, task, budget, output, maxFiles, skills, refinePrompt, compact }) => {
       const result = await prepareContext({
         root: resolve(root),
         task,
@@ -53,6 +54,7 @@ export async function startMcpServer(): Promise<void> {
         maxFiles,
         ...(skills ? { skills } : {}),
         ...(refinePrompt ? { refinePrompt } : {}),
+        ...(compact ? { compact } : {}),
         ...(output ? { output } : {}),
       });
       return asText({

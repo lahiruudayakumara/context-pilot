@@ -168,6 +168,7 @@ context-pilot prepare \
   --task "Add refund approval workflow" \
   [--skill bugfix|refactor|feature|test|security|perf|docs|architecture|auto] \
   [--refine-prompt] \
+  [--compact] \
   [--budget 12000] \
   [--root PATH] \
   [--output PATH] \

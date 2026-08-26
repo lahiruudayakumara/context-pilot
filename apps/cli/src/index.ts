@@ -70,7 +70,7 @@ function printHelp(): void {
 
 Usage:
   context-pilot index [--root PATH] [--json]
-  context-pilot prepare --task TEXT [--skill NAME] [--refine-prompt] [--budget 12000] [--output PATH] [--json]
+  context-pilot prepare --task TEXT [--skill NAME] [--refine-prompt] [--compact] [--budget 12000] [--output PATH] [--json]
   context-pilot convert-prompt --task TEXT [--skill NAME] [--json]
   context-pilot diff-context [BASE...HEAD] [--budget 16000] [--output PATH] [--json]
   context-pilot stats [--root PATH] [--json]
@@ -85,6 +85,7 @@ Options:
   --task TEXT       Developer task to optimize context for
   --skill NAME      Apply skill option (${AVAILABLE_SKILL_NAMES.join(", ")}, auto)
   --refine-prompt   Convert prompt into enhanced task prompt using selected/auto skills
+  --compact         Enable high-density code compression (strips comments & blank lines)
   --budget TOKENS   Maximum estimated bundle size
   --output PATH     Output Markdown path
   --max-files N     Maximum candidates before budget compilation
@@ -243,6 +244,7 @@ async function run(argv = process.argv.slice(2)): Promise<void> {
       const rawSkills = stringFlag(args, "skill");
       const skills = rawSkills ? rawSkills.split(",").map((s) => s.trim()) : undefined;
       const refinePrompt = args.flags.has("refine-prompt");
+      const compact = args.flags.has("compact");
 
       const result = await prepareContext({
         root,
@@ -251,6 +253,7 @@ async function run(argv = process.argv.slice(2)): Promise<void> {
         maxFiles: numberFlag(args, "max-files", 24),
         ...(skills ? { skills } : {}),
         ...(refinePrompt ? { refinePrompt: true } : {}),
+        ...(compact ? { compact: true } : {}),
         ...(output ? { output } : {}),
       });
       if (json) {
