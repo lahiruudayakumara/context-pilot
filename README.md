@@ -20,8 +20,12 @@ budget.
 - Symbol-level excerpts instead of whole large files
 - Hierarchical `AGENTS.md` discovery
 - Budgeted Markdown context bundles and usage reports
+- Remaining-budget, utilization, overage, and pressure-status estimates
+- Stage-by-stage savings for symbol extraction and optional compact compression
+- Actionable optimization hints when a bundle is near or over its budget
 - Per-task and cumulative estimated token-reduction history
 - Git diff context for pull-request review
+- Opt-in published-version checks and global CLI updates
 - Optional MCP server exposing `prepare_context`, `index_repository`, and
   `diff_context`
 
@@ -101,12 +105,17 @@ pnpm context-pilot stats
 
 # Compare estimated usage across recent tasks.
 pnpm context-pilot history --limit 20
+
+# Check whether a newer release is available (global installs).
+context-pilot update --check
 ```
 
 `prepare` writes a file under `.context-pilot/tasks/` and prints a usage
 estimate. The generated prompt tells the coding agent which files and symbols
 matter, preserves applicable repository instructions, and identifies content
-that was omitted to stay within budget.
+that was omitted to stay within budget. Usage output also reports the estimated
+budget utilization and remaining capacity. Use `--compact` when a bundle is
+near its limit to remove comments and repeated blank lines from code excerpts.
 
 ## Connect to the Codex app
 
@@ -251,6 +260,48 @@ context-pilot history --limit 100 --json
 measurement of what Codex would actually have loaded. “With ContextPilot” is
 the estimated size of the generated task bundle. ContextPilot cannot observe
 Codex’s hidden context, prompt cache, output tokens, or billing.
+
+### `context-pilot update`
+
+Version checks and updates are explicit and opt-in. ContextPilot never contacts
+the npm registry in the background, preserving its local-first default.
+
+Check for a new published release without changing the installation:
+
+```bash
+context-pilot update --check
+```
+
+Install the latest release with the same package manager used for the global
+installation:
+
+```bash
+# npm global installation (default)
+context-pilot update
+
+# pnpm global installation
+context-pilot update --package-manager pnpm
+```
+
+For scripts and tooling, add `--json` to either form:
+
+```bash
+context-pilot update --check --json
+context-pilot update --json
+```
+
+The updater reads the current version from the installed package metadata, then
+reads the latest `codex-context-pilot` version from the npm registry. It
+installs only when that version is newer, pins the exact version observed by
+the check, and never changes repository files or `.context-pilot/` data.
+Restart the Codex app or any running MCP server after an update.
+
+If the package manager reports a global-install permission error, fix the
+global npm/pnpm directory ownership or configuration and run the command again.
+Avoid running ContextPilot itself with elevated privileges. The update command
+updates a globally installed CLI; it does not update a source checkout. For a
+checkout, use the development workflow below (`git pull`, `pnpm install`, and
+`pnpm build`).
 
 ## Generated data
 
