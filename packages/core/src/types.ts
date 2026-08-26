@@ -46,6 +46,17 @@ export interface UsageEstimate {
   estimatedTotalInputTokens: number;
   estimatedContextReductionPercent: number;
   budget: number;
+  budgetRemainingTokens: number;
+  budgetOverageTokens: number;
+  budgetUtilizationPercent: number;
+  budgetStatus: "comfortable" | "near-limit" | "at-limit" | "over-budget";
+  symbolExtractionTokensSaved: number;
+  symbolExtractionReductionPercent: number;
+  compressionTokensSaved: number;
+  compressionReductionPercent: number;
+  selectedFileCount: number;
+  omittedFileCount: number;
+  optimizationHints: string[];
 }
 
 export interface TaskRunRecord {
@@ -59,6 +70,10 @@ export interface TaskRunRecord {
   estimatedContextReductionPercent: number;
   budget: number;
   selectedFiles: string[];
+  budgetRemainingTokens: number;
+  budgetOverageTokens: number;
+  budgetUtilizationPercent: number;
+  budgetStatus: "comfortable" | "near-limit" | "at-limit" | "over-budget";
 }
 
 export interface PrepareOptions {

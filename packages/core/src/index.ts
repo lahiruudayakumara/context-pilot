@@ -6,6 +6,7 @@ import { indexRepository } from "../../indexer/src/index.js";
 import { compilePrompt, convertPrompt } from "../../prompt-compiler/src/index.js";
 import { retrieveFiles } from "../../retriever/src/index.js";
 import { estimateRepositoryTokens } from "../../token-estimator/src/index.js";
+import { analyzeTokenBudget } from "../../token-estimator/src/index.js";
 import type {
   CacheStats,
   PrepareOptions,
@@ -142,6 +143,10 @@ export async function prepareContext(options: PrepareOptions): Promise<PrepareRe
   await writeFile(outputPath, compiled.markdown, "utf8");
   const historyCache = new SummaryCache(root);
   try {
+    const budgetAnalysis = analyzeTokenBudget(
+      compiled.usage.estimatedWithContextPilotTokens,
+      budget,
+    );
     historyCache.recordTaskRun({
       task: options.task,
       createdAt: new Date().toISOString(),
@@ -154,6 +159,10 @@ export async function prepareContext(options: PrepareOptions): Promise<PrepareRe
         compiled.usage.estimatedContextReductionPercent,
       budget,
       selectedFiles: compiled.included.map(({ file }) => file.path),
+      budgetRemainingTokens: budgetAnalysis.remainingTokens,
+      budgetOverageTokens: budgetAnalysis.overBudgetTokens,
+      budgetUtilizationPercent: budgetAnalysis.utilizationPercent,
+      budgetStatus: budgetAnalysis.status,
     });
   } finally {
     historyCache.close();
