@@ -3,6 +3,8 @@ import { extname, join } from "node:path";
 import type { RankedFile, UsageEstimate } from "../../core/src/types.js";
 import { estimateTokens, truncateToTokens } from "../../token-estimator/src/index.js";
 
+export * from "./skills/index.js";
+
 export interface CompileInput {
   root: string;
   task: string;
@@ -12,6 +14,7 @@ export interface CompileInput {
   instructions: Array<{ path: string; content: string }>;
   repositoryEstimatedTokens: number;
   diff?: string;
+  skills?: string[];
 }
 
 export interface CompileResult {
@@ -85,6 +88,18 @@ export async function compilePrompt(input: CompileInput): Promise<CompileResult>
     "## Task",
     "",
     input.task,
+  ];
+
+  if (input.skills && input.skills.length > 0) {
+    headerParts.push(
+      "",
+      "## Active Skills",
+      "",
+      ...input.skills.map((skill) => `- ${skill}`),
+    );
+  }
+
+  headerParts.push(
     "",
     "## Agent guidance",
     "",
@@ -92,7 +107,7 @@ export async function compilePrompt(input: CompileInput): Promise<CompileResult>
     "- Inspect additional repository files only when the bundle is insufficient.",
     "- Treat excerpts as partial files; preserve surrounding behavior when editing.",
     "- Run the repository's relevant validation commands after changes.",
-  ];
+  );
 
   if (input.instructions.length) {
     headerParts.push("", "## Repository instructions", "");
