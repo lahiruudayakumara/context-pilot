@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { extname, join, relative, sep } from "node:path";
 import { SummaryCache } from "../../cache/src/index.js";
+import { ensureGitignoreEntry } from "../../core/src/gitignore.js";
 import type { FileRecord, IndexResult, SymbolRecord } from "../../core/src/types.js";
 
 const SUMMARY_VERSION = "deterministic-v1";
@@ -231,6 +232,7 @@ function summarize(path: string, content: string, symbols: SymbolRecord[], impor
 
 export async function indexRepository(root: string): Promise<IndexResult> {
   const started = performance.now();
+  await ensureGitignoreEntry(root);
   const absoluteFiles = await collectFiles(root);
   const files: FileRecord[] = [];
   const cache = new SummaryCache(root);

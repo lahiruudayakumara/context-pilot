@@ -75,3 +75,20 @@ test("prepares context with skill options and converted prompt", async () => {
   assert.match(persisted, /bugfix/);
   assert.match(persisted, /test/);
 });
+
+test("automatically ensures .context-pilot/ entry in target .gitignore", async () => {
+  const root = await mkdtemp(join(tmpdir(), "context-pilot-gitignore-"));
+  await mkdir(join(root, "src"), { recursive: true });
+  await writeFile(join(root, "src", "index.ts"), "export const a = 1;");
+  await writeFile(join(root, ".gitignore"), "node_modules/\n");
+
+  await prepareContext({
+    root,
+    task: "Build index",
+    budget: 1_000,
+  });
+
+  const gitignoreContent = await readFile(join(root, ".gitignore"), "utf8");
+  assert.match(gitignoreContent, /node_modules\//);
+  assert.match(gitignoreContent, /\.context-pilot\//);
+});

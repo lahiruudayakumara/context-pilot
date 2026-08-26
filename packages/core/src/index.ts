@@ -14,6 +14,7 @@ import type {
 } from "./types.js";
 
 export * from "./types.js";
+export { ensureGitignoreEntry } from "./gitignore.js";
 export {
   convertPrompt,
   detectSkills,
