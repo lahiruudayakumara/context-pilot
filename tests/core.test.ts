@@ -49,3 +49,29 @@ test("prepares a bounded task bundle with instructions", async () => {
   assert.equal(history.length, 1);
   assert.equal(history[0]?.task, "Add refund approval validation");
 });
+
+test("prepares context with skill options and converted prompt", async () => {
+  const root = await mkdtemp(join(tmpdir(), "context-pilot-skills-"));
+  await mkdir(join(root, "src"), { recursive: true });
+  await writeFile(
+    join(root, "src", "payment.ts"),
+    `export function processPayment(amount: number) {
+  if (amount <= 0) throw new Error("Invalid amount");
+  return { success: true };
+}`,
+  );
+
+  const result = await prepareContext({
+    root,
+    task: "Fix payment error on negative amount",
+    skills: ["bugfix", "test"],
+    budget: 3_000,
+  });
+
+  assert.deepEqual(result.appliedSkills, ["bugfix", "unit-testing"]);
+  assert.ok(result.convertedTask);
+  const persisted = await readFile(result.outputPath, "utf8");
+  assert.match(persisted, /Active Skills/);
+  assert.match(persisted, /bugfix/);
+  assert.match(persisted, /test/);
+});

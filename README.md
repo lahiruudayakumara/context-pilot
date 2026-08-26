@@ -1,5 +1,7 @@
 # ContextPilot
 
+[![CI](https://github.com/opencorex-org/context-pilot/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/opencorex-org/context-pilot/actions/workflows/ci.yml)
+
 ContextPilot is a local-first context optimizer for coding agents. It indexes a
 repository, ranks files and symbols for a task, reuses cached summaries, and
 compiles a compact Markdown context bundle that fits a configurable token
@@ -78,10 +80,16 @@ pnpm context-pilot --help
 # Build or refresh the local index.
 pnpm context-pilot index
 
-# Prepare a context bundle for a coding task.
+# Prepare a context bundle for a coding task with skill options.
 pnpm context-pilot prepare \
   --task "Fix duplicate invoice numbers under concurrent requests" \
+  --skill bugfix \
   --budget 12000
+
+# Convert a raw prompt into a structured task prompt.
+pnpm context-pilot convert-prompt \
+  --task "Improve summary index performance" \
+  --skill perf
 
 # Produce review context for a branch.
 pnpm context-pilot diff-context main...HEAD --budget 16000
@@ -136,7 +144,7 @@ Use ContextPilot to prepare focused context for this task before exploring the
 repository: fix duplicate invoice-number generation under concurrency.
 ```
 
-ContextPilot exposes `prepare_context`, `index_repository`, `diff_context`, and
+ContextPilot exposes `prepare_context`, `convert_prompt`, `index_repository`, `diff_context`, and
 `context_stats`, plus `context_history`. Its MCP instructions encourage Codex to
 prepare focused context before broad repository exploration.
 
@@ -156,6 +164,8 @@ context-pilot index [--root PATH] [--json]
 ```bash
 context-pilot prepare \
   --task "Add refund approval workflow" \
+  [--skill bugfix|refactor|feature|test|security|perf|docs|architecture|auto] \
+  [--refine-prompt] \
   [--budget 12000] \
   [--root PATH] \
   [--output PATH] \
@@ -164,12 +174,23 @@ context-pilot prepare \
 
 Context priority is:
 
-1. Task
+1. Task & Active Skills
 2. Applicable `AGENTS.md` instructions
 3. Current Git changes
 4. Matching symbols and source excerpts
 5. Tests
 6. Compact file summaries
+
+### `context-pilot convert-prompt`
+
+Converts a raw task prompt into an enhanced, structured prompt with skill guidelines and verification criteria:
+
+```bash
+context-pilot convert-prompt \
+  --task "Fix memory leakage during large file indexing" \
+  [--skill perf,bugfix] \
+  [--json]
+```
 
 ### `context-pilot diff-context`
 
@@ -268,6 +289,10 @@ pnpm build
 pnpm release:check
 npm run release:rehearse
 ```
+
+GitHub Actions runs `pnpm check` and `pnpm build` on Node.js 22 and 24 for
+pull requests and pushes to `main`. The workflow uses the frozen pnpm lockfile
+and can also be started manually.
 
 ## Releasing
 
