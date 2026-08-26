@@ -216,6 +216,16 @@ pnpm release:check
 pnpm release:rehearse
 ```
 
+### Continuous integration
+
+The `CI` GitHub Actions workflow runs for pull requests, pushes to `main`, and
+manual dispatches. It executes `pnpm check` and `pnpm build` against Node.js 22
+and 24 with `pnpm install --frozen-lockfile`.
+
+All matrix jobs must pass before merging. When a CI failure is platform- or
+version-specific, reproduce it with the corresponding supported Node.js major
+instead of weakening the matrix or marking the job as allowed to fail.
+
 ## Commits
 
 Write imperative, specific commit subjects. Conventional Commit prefixes are

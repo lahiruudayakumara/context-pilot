@@ -2,6 +2,13 @@
 
 All notable changes to ContextPilot are documented here.
 
+## Unreleased
+
+### Added
+
+- GitHub Actions continuous integration for Node.js 22 and 24, running
+  type-checking, tests, and production builds on pull requests and `main`
+
 ## 0.1.0 - 2026-07-28
 
 ### Added
