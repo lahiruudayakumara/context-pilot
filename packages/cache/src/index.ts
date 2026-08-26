@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { CacheStats, FileRecord, TaskRunRecord } from "../../core/src/types.js";
+import { analyzeTokenBudget } from "../../token-estimator/src/index.js";
 
 export class SummaryCache implements Disposable {
   readonly databasePath: string;
@@ -140,18 +141,25 @@ export class SummaryCache implements Disposable {
       budget: number;
       selected_files: string;
     }>;
-    return rows.map((row) => ({
-      id: row.id,
-      task: row.task,
-      createdAt: row.created_at,
-      outputPath: row.output_path,
-      estimatedWithoutContextPilotTokens: row.without_tokens,
-      estimatedWithContextPilotTokens: row.with_tokens,
-      estimatedTokensSaved: row.saved_tokens,
-      estimatedContextReductionPercent: row.reduction_percent,
-      budget: row.budget,
-      selectedFiles: JSON.parse(row.selected_files) as string[],
-    }));
+    return rows.map((row) => {
+      const budget = analyzeTokenBudget(row.with_tokens, row.budget);
+      return {
+        id: row.id,
+        task: row.task,
+        createdAt: row.created_at,
+        outputPath: row.output_path,
+        estimatedWithoutContextPilotTokens: row.without_tokens,
+        estimatedWithContextPilotTokens: row.with_tokens,
+        estimatedTokensSaved: row.saved_tokens,
+        estimatedContextReductionPercent: row.reduction_percent,
+        budget: row.budget,
+        selectedFiles: JSON.parse(row.selected_files) as string[],
+        budgetRemainingTokens: budget.remainingTokens,
+        budgetOverageTokens: budget.overBudgetTokens,
+        budgetUtilizationPercent: budget.utilizationPercent,
+        budgetStatus: budget.status,
+      };
+    });
   }
 
   close(): void {
