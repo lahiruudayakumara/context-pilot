@@ -68,6 +68,8 @@ export interface PrepareOptions {
   output?: string;
   diffRange?: string;
   maxFiles?: number;
+  skills?: string[];
+  refinePrompt?: boolean;
 }
 
 export interface PrepareResult {
@@ -77,6 +79,8 @@ export interface PrepareResult {
   changedFiles: string[];
   usage: UsageEstimate;
   index: IndexResult;
+  appliedSkills?: string[];
+  convertedTask?: string;
 }
 
 export interface CacheStats {

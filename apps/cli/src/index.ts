@@ -10,6 +10,9 @@ import {
   repositoryStats,
   prepareContext,
   taskHistory,
+  convertPrompt,
+  AVAILABLE_SKILL_NAMES,
+  SKILL_PRESETS,
 } from "../../../packages/core/src/index.js";
 import { indexRepository } from "../../../packages/indexer/src/index.js";
 
@@ -67,7 +70,8 @@ function printHelp(): void {
 
 Usage:
   context-pilot index [--root PATH] [--json]
-  context-pilot prepare --task TEXT [--budget 12000] [--output PATH] [--json]
+  context-pilot prepare --task TEXT [--skill NAME] [--refine-prompt] [--budget 12000] [--output PATH] [--json]
+  context-pilot convert-prompt --task TEXT [--skill NAME] [--json]
   context-pilot diff-context [BASE...HEAD] [--budget 16000] [--output PATH] [--json]
   context-pilot stats [--root PATH] [--json]
   context-pilot history [--root PATH] [--limit 20] [--json]
@@ -79,6 +83,8 @@ Usage:
 Options:
   --root PATH       Repository root (default: current directory)
   --task TEXT       Developer task to optimize context for
+  --skill NAME      Apply skill option (${AVAILABLE_SKILL_NAMES.join(", ")}, auto)
+  --refine-prompt   Convert prompt into enhanced task prompt using selected/auto skills
   --budget TOKENS   Maximum estimated bundle size
   --output PATH     Output Markdown path
   --max-files N     Maximum candidates before budget compilation
@@ -181,6 +187,9 @@ enabled = true`;
 
 function reportPrepare(result: Awaited<ReturnType<typeof prepareContext>>): void {
   console.log(`Context bundle: ${result.outputPath}`);
+  if (result.appliedSkills?.length) {
+    console.log(`Applied skills: ${result.appliedSkills.join(", ")}`);
+  }
   console.log(`Selected files: ${result.selected.length}`);
   console.log(`Changed files: ${result.changedFiles.length}`);
   console.log(
@@ -231,11 +240,17 @@ async function run(argv = process.argv.slice(2)): Promise<void> {
       const task = stringFlag(args, "task") ?? args.positional.join(" ");
       if (!task) throw new Error("prepare requires --task \"...\"");
       const output = stringFlag(args, "output");
+      const rawSkills = stringFlag(args, "skill");
+      const skills = rawSkills ? rawSkills.split(",").map((s) => s.trim()) : undefined;
+      const refinePrompt = args.flags.has("refine-prompt");
+
       const result = await prepareContext({
         root,
         task,
         budget: numberFlag(args, "budget", 12_000),
         maxFiles: numberFlag(args, "max-files", 24),
+        ...(skills ? { skills } : {}),
+        ...(refinePrompt ? { refinePrompt: true } : {}),
         ...(output ? { output } : {}),
       });
       if (json) {
@@ -243,6 +258,8 @@ async function run(argv = process.argv.slice(2)): Promise<void> {
           JSON.stringify(
             {
               outputPath: result.outputPath,
+              appliedSkills: result.appliedSkills,
+              convertedTask: result.convertedTask,
               selectedFiles: result.selected.map(({ file, score, reasons }) => ({
                 path: file.path,
                 score,
@@ -263,6 +280,24 @@ async function run(argv = process.argv.slice(2)): Promise<void> {
           ),
         );
       } else reportPrepare(result);
+      return;
+    }
+    case "refine-prompt":
+    case "convert-prompt": {
+      const task = stringFlag(args, "task") ?? args.positional.join(" ");
+      if (!task) throw new Error("convert-prompt requires --task \"...\"");
+      const rawSkills = stringFlag(args, "skill");
+      const skills = rawSkills ? rawSkills.split(",").map((s) => s.trim()) : undefined;
+
+      const converted = convertPrompt({ task, skills });
+      if (json) {
+        console.log(JSON.stringify(converted, null, 2));
+      } else {
+        console.log(`Original Task: ${converted.originalTask}`);
+        console.log(`Applied Skills: ${converted.appliedSkills.join(", ") || "none"}\n`);
+        console.log("--- Converted Task Prompt ---");
+        console.log(converted.convertedTask);
+      }
       return;
     }
     case "diff-context": {
