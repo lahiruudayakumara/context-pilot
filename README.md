@@ -1,5 +1,7 @@
 # ContextPilot
 
+[![CI](https://github.com/opencorex-org/context-pilot/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/opencorex-org/context-pilot/actions/workflows/ci.yml)
+
 ContextPilot is a local-first context optimizer for coding agents. It indexes a
 repository, ranks files and symbols for a task, reuses cached summaries, and
 compiles a compact Markdown context bundle that fits a configurable token
@@ -18,8 +20,12 @@ budget.
 - Symbol-level excerpts instead of whole large files
 - Hierarchical `AGENTS.md` discovery
 - Budgeted Markdown context bundles and usage reports
+- Remaining-budget, utilization, overage, and pressure-status estimates
+- Stage-by-stage savings for symbol extraction and optional compact compression
+- Actionable optimization hints when a bundle is near or over its budget
 - Per-task and cumulative estimated token-reduction history
 - Git diff context for pull-request review
+- Opt-in published-version checks and global CLI updates
 - Optional MCP server exposing `prepare_context`, `index_repository`, and
   `diff_context`
 
@@ -36,6 +42,8 @@ service.
   important modules, development, and testing
 - [Architecture](docs/ARCHITECTURE.md) — boundaries, data flow, design
   decisions, privacy, reliability, and extension points
+- [Product roadmap](docs/ROADMAP.md) — strategic product vision, architectural
+  milestones, and planned deliverables
 - [Contributing](CONTRIBUTING.md) — development workflow, standards, tests, and
   pull-request expectations
 - [Security policy](SECURITY.md) — supported versions and private reporting
@@ -78,10 +86,16 @@ pnpm context-pilot --help
 # Build or refresh the local index.
 pnpm context-pilot index
 
-# Prepare a context bundle for a coding task.
+# Prepare a context bundle for a coding task with skill options.
 pnpm context-pilot prepare \
   --task "Fix duplicate invoice numbers under concurrent requests" \
+  --skill bugfix \
   --budget 12000
+
+# Convert a raw prompt into a structured task prompt.
+pnpm context-pilot convert-prompt \
+  --task "Improve summary index performance" \
+  --skill perf
 
 # Produce review context for a branch.
 pnpm context-pilot diff-context main...HEAD --budget 16000
@@ -91,12 +105,17 @@ pnpm context-pilot stats
 
 # Compare estimated usage across recent tasks.
 pnpm context-pilot history --limit 20
+
+# Check whether a newer release is available (global installs).
+context-pilot update --check
 ```
 
 `prepare` writes a file under `.context-pilot/tasks/` and prints a usage
 estimate. The generated prompt tells the coding agent which files and symbols
 matter, preserves applicable repository instructions, and identifies content
-that was omitted to stay within budget.
+that was omitted to stay within budget. Usage output also reports the estimated
+budget utilization and remaining capacity. Use `--compact` when a bundle is
+near its limit to remove comments and repeated blank lines from code excerpts.
 
 ## Connect to the Codex app
 
@@ -136,7 +155,7 @@ Use ContextPilot to prepare focused context for this task before exploring the
 repository: fix duplicate invoice-number generation under concurrency.
 ```
 
-ContextPilot exposes `prepare_context`, `index_repository`, `diff_context`, and
+ContextPilot exposes `prepare_context`, `convert_prompt`, `index_repository`, `diff_context`, and
 `context_stats`, plus `context_history`. Its MCP instructions encourage Codex to
 prepare focused context before broad repository exploration.
 
@@ -156,6 +175,9 @@ context-pilot index [--root PATH] [--json]
 ```bash
 context-pilot prepare \
   --task "Add refund approval workflow" \
+  [--skill bugfix|refactor|feature|test|security|perf|docs|architecture|auto] \
+  [--refine-prompt] \
+  [--compact] \
   [--budget 12000] \
   [--root PATH] \
   [--output PATH] \
@@ -164,12 +186,23 @@ context-pilot prepare \
 
 Context priority is:
 
-1. Task
+1. Task & Active Skills
 2. Applicable `AGENTS.md` instructions
 3. Current Git changes
 4. Matching symbols and source excerpts
 5. Tests
 6. Compact file summaries
+
+### `context-pilot convert-prompt`
+
+Converts a raw task prompt into an enhanced, structured prompt with skill guidelines and verification criteria:
+
+```bash
+context-pilot convert-prompt \
+  --task "Fix memory leakage during large file indexing" \
+  [--skill perf,bugfix] \
+  [--json]
+```
 
 ### `context-pilot diff-context`
 
@@ -228,6 +261,48 @@ measurement of what Codex would actually have loaded. “With ContextPilot” is
 the estimated size of the generated task bundle. ContextPilot cannot observe
 Codex’s hidden context, prompt cache, output tokens, or billing.
 
+### `context-pilot update`
+
+Version checks and updates are explicit and opt-in. ContextPilot never contacts
+the npm registry in the background, preserving its local-first default.
+
+Check for a new published release without changing the installation:
+
+```bash
+context-pilot update --check
+```
+
+Install the latest release with the same package manager used for the global
+installation:
+
+```bash
+# npm global installation (default)
+context-pilot update
+
+# pnpm global installation
+context-pilot update --package-manager pnpm
+```
+
+For scripts and tooling, add `--json` to either form:
+
+```bash
+context-pilot update --check --json
+context-pilot update --json
+```
+
+The updater reads the current version from the installed package metadata, then
+reads the latest `codex-context-pilot` version from the npm registry. It
+installs only when that version is newer, pins the exact version observed by
+the check, and never changes repository files or `.context-pilot/` data.
+Restart the Codex app or any running MCP server after an update.
+
+If the package manager reports a global-install permission error, fix the
+global npm/pnpm directory ownership or configuration and run the command again.
+Avoid running ContextPilot itself with elevated privileges. The update command
+updates a globally installed CLI; it does not update a source checkout. For a
+checkout, use the development workflow below (`git pull`, `pnpm install`, and
+`pnpm build`).
+
 ## Generated data
 
 ContextPilot writes only to `.context-pilot/` in the target repository:
@@ -268,6 +343,10 @@ pnpm build
 pnpm release:check
 npm run release:rehearse
 ```
+
+GitHub Actions runs `pnpm check` and `pnpm build` on Node.js 22 and 24 for
+pull requests and pushes to `main`. The workflow uses the frozen pnpm lockfile
+and can also be started manually.
 
 ## Releasing
 

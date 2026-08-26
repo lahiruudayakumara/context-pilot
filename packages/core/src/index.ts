@@ -3,9 +3,10 @@ import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { SummaryCache } from "../../cache/src/index.js";
 import { getChangedFiles, getDiff } from "../../git-analyzer/src/index.js";
 import { indexRepository } from "../../indexer/src/index.js";
-import { compilePrompt } from "../../prompt-compiler/src/index.js";
+import { compilePrompt, convertPrompt } from "../../prompt-compiler/src/index.js";
 import { retrieveFiles } from "../../retriever/src/index.js";
 import { estimateRepositoryTokens } from "../../token-estimator/src/index.js";
+import { analyzeTokenBudget } from "../../token-estimator/src/index.js";
 import type {
   CacheStats,
   PrepareOptions,
@@ -14,6 +15,22 @@ import type {
 } from "./types.js";
 
 export * from "./types.js";
+export { ensureGitignoreEntry } from "./gitignore.js";
+export {
+  convertPrompt,
+  detectSkills,
+  getSkillDefinition,
+  getSkillsByCategory,
+  SKILL_PRESETS,
+  AVAILABLE_SKILL_NAMES,
+  ALL_SKILL_DEFINITIONS,
+  compressExcerpt,
+} from "../../prompt-compiler/src/index.js";
+export type {
+  ConvertPromptOptions,
+  ConvertPromptResult,
+  SkillDefinition,
+} from "../../prompt-compiler/src/index.js";
 
 function slugify(value: string): string {
   return (
@@ -63,9 +80,24 @@ export async function prepareContext(options: PrepareOptions): Promise<PrepareRe
   const budget = Math.max(1_000, options.budget);
   const index = await indexRepository(root);
   const changedFiles = await getChangedFiles(root, options.diffRange);
+
+  let finalTask = options.task;
+  let appliedSkills: string[] | undefined;
+  let convertedTask: string | undefined;
+
+  if (options.skills?.length || options.refinePrompt) {
+    const conversion = convertPrompt({
+      task: options.task,
+      skills: options.skills,
+    });
+    finalTask = conversion.convertedTask;
+    appliedSkills = conversion.appliedSkills;
+    convertedTask = conversion.convertedTask;
+  }
+
   const ranked = await retrieveFiles(
     root,
-    options.task,
+    finalTask,
     index.files,
     changedFiles,
     options.maxFiles ?? 24,
@@ -91,13 +123,15 @@ export async function prepareContext(options: PrepareOptions): Promise<PrepareRe
   const diff = changedFiles.length ? await getDiff(root, options.diffRange) : undefined;
   const compiled = await compilePrompt({
     root,
-    task: options.task,
+    task: finalTask,
     budget,
     ranked,
     changedFiles,
     instructions,
     repositoryEstimatedTokens: estimateRepositoryTokens(index.files),
     ...(diff ? { diff } : {}),
+    ...(appliedSkills ? { skills: appliedSkills } : {}),
+    ...(options.compact ? { compact: true } : {}),
   });
   const defaultOutput = join(root, ".context-pilot", "tasks", `${slugify(options.task)}.md`);
   const outputPath = options.output
@@ -109,6 +143,10 @@ export async function prepareContext(options: PrepareOptions): Promise<PrepareRe
   await writeFile(outputPath, compiled.markdown, "utf8");
   const historyCache = new SummaryCache(root);
   try {
+    const budgetAnalysis = analyzeTokenBudget(
+      compiled.usage.estimatedWithContextPilotTokens,
+      budget,
+    );
     historyCache.recordTaskRun({
       task: options.task,
       createdAt: new Date().toISOString(),
@@ -121,6 +159,10 @@ export async function prepareContext(options: PrepareOptions): Promise<PrepareRe
         compiled.usage.estimatedContextReductionPercent,
       budget,
       selectedFiles: compiled.included.map(({ file }) => file.path),
+      budgetRemainingTokens: budgetAnalysis.remainingTokens,
+      budgetOverageTokens: budgetAnalysis.overBudgetTokens,
+      budgetUtilizationPercent: budgetAnalysis.utilizationPercent,
+      budgetStatus: budgetAnalysis.status,
     });
   } finally {
     historyCache.close();
@@ -132,6 +174,8 @@ export async function prepareContext(options: PrepareOptions): Promise<PrepareRe
     changedFiles,
     usage: compiled.usage,
     index,
+    ...(appliedSkills ? { appliedSkills } : {}),
+    ...(convertedTask ? { convertedTask } : {}),
   };
 }
 

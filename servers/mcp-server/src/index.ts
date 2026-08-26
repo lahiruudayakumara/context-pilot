@@ -7,6 +7,8 @@ import {
   prepareContext,
   repositoryStats,
   taskHistory,
+  convertPrompt,
+  AVAILABLE_SKILL_NAMES,
 } from "../../../packages/core/src/index.js";
 import { indexRepository } from "../../../packages/indexer/src/index.js";
 
@@ -24,7 +26,7 @@ export async function startMcpServer(): Promise<void> {
     },
     {
       instructions:
-        "Use prepare_context before broad repository exploration when the user asks for coding, debugging, review, or architecture work. Pass the active repository's absolute root and the user's task. Prefer the returned focused context; inspect additional files only when necessary. Use diff_context for Git review tasks. Token counts are estimates.",
+        "Use prepare_context before broad repository exploration when the user asks for coding, debugging, review, or architecture work. Pass the active repository's absolute root and the user's task. Optionally pass skill options or refinePrompt to convert raw tasks into structured prompts. Prefer the returned focused context; inspect additional files only when necessary. Use diff_context for Git review tasks. Token counts are estimates.",
     },
   );
 
@@ -39,18 +41,26 @@ export async function startMcpServer(): Promise<void> {
         budget: z.number().int().positive().default(12_000),
         output: z.string().optional().describe("Optional output path"),
         maxFiles: z.number().int().positive().default(24),
+        skills: z.array(z.string()).optional().describe(`Optional skill options: ${AVAILABLE_SKILL_NAMES.join(", ")}`),
+        refinePrompt: z.boolean().optional().describe("Whether to convert task into an enhanced structured prompt"),
+        compact: z.boolean().optional().describe("Whether to enable high-density code token compression (strips comments & blank lines)"),
       },
     },
-    async ({ root, task, budget, output, maxFiles }) => {
+    async ({ root, task, budget, output, maxFiles, skills, refinePrompt, compact }) => {
       const result = await prepareContext({
         root: resolve(root),
         task,
         budget,
         maxFiles,
+        ...(skills ? { skills } : {}),
+        ...(refinePrompt ? { refinePrompt } : {}),
+        ...(compact ? { compact } : {}),
         ...(output ? { output } : {}),
       });
       return asText({
         outputPath: result.outputPath,
+        appliedSkills: result.appliedSkills,
+        convertedTask: result.convertedTask,
         selectedFiles: result.selected.map(({ file, score, reasons }) => ({
           path: file.path,
           score,
@@ -59,6 +69,27 @@ export async function startMcpServer(): Promise<void> {
         changedFiles: result.changedFiles,
         usage: result.usage,
         markdown: result.markdown,
+      });
+    },
+  );
+
+  server.registerTool(
+    "convert_prompt",
+    {
+      description:
+        "Convert a raw task prompt into a structured, enhanced prompt with skill guidelines and verification criteria.",
+      inputSchema: {
+        task: z.string().min(1).describe("Raw task prompt to convert"),
+        skills: z.array(z.string()).optional().describe(`Skill options to apply (${AVAILABLE_SKILL_NAMES.join(", ")}, auto)`),
+      },
+    },
+    async ({ task, skills }) => {
+      const conversion = convertPrompt({ task, skills });
+      return asText({
+        originalTask: conversion.originalTask,
+        convertedTask: conversion.convertedTask,
+        appliedSkills: conversion.appliedSkills,
+        availableSkills: AVAILABLE_SKILL_NAMES,
       });
     },
   );
