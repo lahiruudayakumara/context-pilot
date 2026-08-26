@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { resolve } from "node:path";
 import { execFile } from "node:child_process";
-import { realpathSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { access } from "node:fs/promises";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
@@ -17,6 +17,27 @@ import {
 import { indexRepository } from "../../../packages/indexer/src/index.js";
 
 const execFileAsync = promisify(execFile);
+const PACKAGE_NAME = "codex-context-pilot";
+
+function installedPackageVersion(): string {
+  const candidates = [
+    new URL("../../../../package.json", import.meta.url),
+    new URL("../../../package.json", import.meta.url),
+  ];
+  for (const candidate of candidates) {
+    try {
+      const manifest = JSON.parse(readFileSync(candidate, "utf8")) as { version?: unknown };
+      if (typeof manifest.version === "string") return manifest.version;
+    } catch {
+      // Try the next layout: built package first, source checkout second.
+    }
+  }
+  throw new Error("Could not read the installed ContextPilot package version.");
+}
+
+const CURRENT_VERSION = installedPackageVersion();
+
+type PackageManager = "npm" | "pnpm";
 
 interface ParsedArguments {
   command?: string;
@@ -75,6 +96,8 @@ Usage:
   context-pilot diff-context [BASE...HEAD] [--budget 16000] [--output PATH] [--json]
   context-pilot stats [--root PATH] [--json]
   context-pilot history [--root PATH] [--limit 20] [--json]
+  context-pilot update --check [--package-manager npm|pnpm] [--json]
+  context-pilot update [--package-manager npm|pnpm] [--json]
   context-pilot mcp
   context-pilot codex install
   context-pilot codex status
@@ -90,9 +113,139 @@ Options:
   --output PATH     Output Markdown path
   --max-files N     Maximum candidates before budget compilation
   --limit N         Number of task-history records to show
+  --check           Check for a newer published version without installing it
+  --package-manager Package manager used for global updates (npm or pnpm; default: npm)
   --json            Emit machine-readable output
   --help            Show this help
   --version         Show the installed version`);
+}
+
+function parseVersion(value: string): { core: number[]; prerelease?: string } {
+  const match = value.trim().match(/^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/);
+  if (!match) throw new Error(`Invalid published version: ${value}`);
+  const core = match.slice(1, 4).map((part) => Number.parseInt(part ?? "0", 10));
+  return { core, ...(match[4] ? { prerelease: match[4] } : {}) };
+}
+
+export function compareVersions(left: string, right: string): number {
+  const leftVersion = parseVersion(left);
+  const rightVersion = parseVersion(right);
+  for (let index = 0; index < 3; index += 1) {
+    const difference = (leftVersion.core[index] ?? 0) - (rightVersion.core[index] ?? 0);
+    if (difference !== 0) return Math.sign(difference);
+  }
+  if (leftVersion.prerelease === rightVersion.prerelease) return 0;
+  if (!leftVersion.prerelease) return 1;
+  if (!rightVersion.prerelease) return -1;
+  const leftParts = leftVersion.prerelease.split(".");
+  const rightParts = rightVersion.prerelease.split(".");
+  for (let index = 0; index < Math.max(leftParts.length, rightParts.length); index += 1) {
+    const leftPart = leftParts[index];
+    const rightPart = rightParts[index];
+    if (leftPart === undefined) return -1;
+    if (rightPart === undefined) return 1;
+    if (leftPart === rightPart) continue;
+    const leftNumeric = /^\d+$/.test(leftPart);
+    const rightNumeric = /^\d+$/.test(rightPart);
+    if (leftNumeric && rightNumeric) {
+      return Math.sign(Number.parseInt(leftPart, 10) - Number.parseInt(rightPart, 10));
+    }
+    if (leftNumeric) return -1;
+    if (rightNumeric) return 1;
+    return Math.sign(leftPart.localeCompare(rightPart));
+  }
+  return 0;
+}
+
+function packageManagerFlag(args: ParsedArguments): PackageManager {
+  const value = stringFlag(args, "package-manager") ?? "npm";
+  if (value !== "npm" && value !== "pnpm") {
+    throw new Error("--package-manager must be npm or pnpm");
+  }
+  return value;
+}
+
+async function publishedVersion(packageManager: PackageManager): Promise<string> {
+  const { stdout } = await execFileAsync(
+    packageManager,
+    ["view", PACKAGE_NAME, "version"],
+    { encoding: "utf8" },
+  );
+  const version = stdout.trim().replace(/^['\"]|['\"]$/g, "");
+  parseVersion(version);
+  return version;
+}
+
+async function runUpdate(args: ParsedArguments, json: boolean): Promise<void> {
+  const packageManager = packageManagerFlag(args);
+  let latestVersion: string;
+  try {
+    latestVersion = await publishedVersion(packageManager);
+  } catch (error) {
+    const detail =
+      error && typeof error === "object" && "stderr" in error
+        ? String(error.stderr).trim()
+        : error instanceof Error
+          ? error.message
+          : String(error);
+    throw new Error(`Could not check the npm registry. ${detail}`);
+  }
+
+  const comparison = compareVersions(CURRENT_VERSION, latestVersion);
+  const updateAvailable = comparison < 0;
+  if (args.flags.has("check") || !updateAvailable) {
+    const status = comparison > 0 ? "local-newer" : updateAvailable ? "update-available" : "up-to-date";
+    if (json) {
+      console.log(JSON.stringify({
+        package: PACKAGE_NAME,
+        currentVersion: CURRENT_VERSION,
+        latestVersion,
+        updateAvailable,
+        status,
+      }, null, 2));
+    } else if (status === "update-available") {
+      console.log(`Update available: ${CURRENT_VERSION} → ${latestVersion}`);
+      console.log(`Run: context-pilot update --package-manager ${packageManager}`);
+    } else if (status === "local-newer") {
+      console.log(`Local version ${CURRENT_VERSION} is newer than published version ${latestVersion}.`);
+    } else {
+      console.log(`ContextPilot ${CURRENT_VERSION} is up to date.`);
+    }
+    return;
+  }
+
+  const installArgs = packageManager === "npm"
+    ? ["install", "--global", `${PACKAGE_NAME}@${latestVersion}`]
+    : ["add", "--global", `${PACKAGE_NAME}@${latestVersion}`];
+  try {
+    const { stdout, stderr } = await execFileAsync(packageManager, installArgs, {
+      encoding: "utf8",
+    });
+    if (!json && stdout.trim()) console.log(stdout.trim());
+    if (!json && stderr.trim()) console.error(stderr.trim());
+  } catch (error) {
+    const detail =
+      error && typeof error === "object" && "stderr" in error
+        ? String(error.stderr).trim()
+        : error instanceof Error
+          ? error.message
+          : String(error);
+    throw new Error(
+      `Update failed with ${packageManager}. Check your global package-manager permissions. ${detail}`,
+    );
+  }
+  if (json) {
+    console.log(JSON.stringify({
+      package: PACKAGE_NAME,
+      previousVersion: CURRENT_VERSION,
+      installedVersion: latestVersion,
+      packageManager,
+      status: "updated",
+    }, null, 2));
+  } else {
+    console.log(`ContextPilot updated: ${CURRENT_VERSION} → ${latestVersion}`);
+    console.log("Restart any running ContextPilot MCP server or the Codex app to use the new version.");
+  }
 }
 
 function printCodexConfig(): void {
@@ -206,6 +359,23 @@ function reportPrepare(result: Awaited<ReturnType<typeof prepareContext>>): void
     `Estimated reduction: ${result.usage.estimatedContextReductionPercent.toFixed(1)}%`,
   );
   console.log(
+    `Budget: ~${result.usage.estimatedTotalInputTokens.toLocaleString()} / ${result.usage.budget.toLocaleString()} tokens (${result.usage.budgetUtilizationPercent.toFixed(1)}%, ${result.usage.budgetStatus})`,
+  );
+  if (result.usage.budgetOverageTokens > 0) {
+    console.log(`Estimated over budget: ~${result.usage.budgetOverageTokens.toLocaleString()} tokens`);
+  } else {
+    console.log(`Estimated remaining: ~${result.usage.budgetRemainingTokens.toLocaleString()} tokens`);
+  }
+  console.log(
+    `Symbol extraction saved: ~${result.usage.symbolExtractionTokensSaved.toLocaleString()} tokens (${result.usage.symbolExtractionReductionPercent.toFixed(1)}%)`,
+  );
+  if (result.usage.compressionTokensSaved > 0) {
+    console.log(
+      `Compact compression saved: ~${result.usage.compressionTokensSaved.toLocaleString()} tokens (${result.usage.compressionReductionPercent.toFixed(1)}%)`,
+    );
+  }
+  for (const hint of result.usage.optimizationHints) console.log(`Tip: ${hint}`);
+  console.log(
     `Index: ${result.index.updated} updated, ${result.index.reused} reused, ${result.index.skipped} skipped`,
   );
 }
@@ -216,7 +386,7 @@ async function run(argv = process.argv.slice(2)): Promise<void> {
     return;
   }
   if (argv[0] === "--version" || argv[0] === "-v") {
-    console.log("0.1.0");
+    console.log(CURRENT_VERSION);
     return;
   }
   const args = parseArguments(argv);
@@ -351,7 +521,7 @@ async function run(argv = process.argv.slice(2)): Promise<void> {
         for (const run of runs) {
           console.log(`${run.createdAt}  ${run.task}`);
           console.log(
-            `  without ~${run.estimatedWithoutContextPilotTokens.toLocaleString()} · with ~${run.estimatedWithContextPilotTokens.toLocaleString()} · saved ~${run.estimatedTokensSaved.toLocaleString()} · reduction ${run.estimatedContextReductionPercent.toFixed(1)}%`,
+            `  without ~${run.estimatedWithoutContextPilotTokens.toLocaleString()} · with ~${run.estimatedWithContextPilotTokens.toLocaleString()} · saved ~${run.estimatedTokensSaved.toLocaleString()} · reduction ${run.estimatedContextReductionPercent.toFixed(1)}% · budget ${run.budgetUtilizationPercent.toFixed(1)}% · remaining ~${run.budgetRemainingTokens.toLocaleString()}`,
           );
         }
         const without = runs.reduce(
@@ -370,6 +540,9 @@ async function run(argv = process.argv.slice(2)): Promise<void> {
       }
       return;
     }
+    case "update":
+      await runUpdate(args, json);
+      return;
     case "mcp": {
       const { startMcpServer } = await import("../../../servers/mcp-server/src/index.js");
       await startMcpServer();
